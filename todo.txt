@@ -1,0 +1,34 @@
+user gives:
+https://quizlet.com/user/grouchyseeker/folders
+
+        ↓
+
+Playwright opens page
+
+        ↓
+
+find folder links in the UI
+
+        ↓
+
+visit each folder
+
+        ↓
+
+find set links in the UI
+
+        ↓
+
+visit each set
+
+        ↓
+
+extract term/definition pairs
+
+        ↓
+
+Zod validate
+
+        ↓
+
+save JSON/CSV

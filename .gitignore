@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build and coverage output
+dist/
+coverage/
+
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+
+# Logs and runtime output
+*.log
+logs/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# IDE settings
+.idea/
+.vscode/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+todo.txt
