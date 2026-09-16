@@ -31,3 +31,4 @@ data/
 
 # Reusable Playwright profile (cookies and Quizlet verification state)
 .quizlet-browser/
+.quizlet-chrome/

@@ -21,11 +21,20 @@ npm run dev -- https://quizlet.com/user/grouchyseeker/folders
 
 Or run `npm run dev` and paste the URL at the prompt.
 
-The browser is visible by default. If Quizlet asks for human verification,
-complete it in that window; the session is retained in `.quizlet-browser` so it
-can be reused on later runs. Leave the window open while verification finishes;
-the CLI waits for the actual Quizlet page before it starts looking for folders.
-To run without a visible browser:
+The scraper prefers your installed Google Chrome and attaches Playwright to it
+after launch. This avoids the automation-branded test browser that Cloudflare may
+reject. Chrome uses a dedicated `.quizlet-chrome` profile, so verification cookies
+are retained without reading or changing your personal browser profile. Leave the
+window open while verification finishes; the CLI waits for the actual Quizlet
+page before it starts looking for folders.
+
+To explicitly require regular Chrome:
+
+```powershell
+npm run dev -- https://quizlet.com/user/grouchyseeker/folders --regular-chrome
+```
+
+To run Playwright's bundled browser without a visible window:
 
 ```powershell
 npm run dev -- https://quizlet.com/user/grouchyseeker/folders --headless

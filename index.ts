@@ -4,10 +4,16 @@ import { ZodError } from "zod";
 import { scrapeQuizletFolders } from "./scraper.js";
 
 function printUsage(): void {
-  console.log(`Usage: npm run dev -- [folders-url] [--headless]
+  console.log(`Usage: npm run dev -- [folders-url] [options]
+
+Options:
+  --regular-chrome      Require an installed regular Chrome browser
+  --playwright-browser  Use Playwright's bundled Chromium instead
+  --headless            Run bundled Chromium without a visible window
 
 If folders-url is omitted, the program prompts for it. The browser is visible by
-default so Quizlet can request human verification when necessary.`);
+default so Quizlet can request human verification when necessary. Regular Chrome
+is preferred automatically when it is installed.`);
 }
 
 const args = process.argv.slice(2);
@@ -17,6 +23,11 @@ if (args.includes("--help") || args.includes("-h")) {
 }
 
 const headless = args.includes("--headless") || process.env.QUIZLET_HEADLESS === "true";
+const browserMode = args.includes("--regular-chrome")
+  ? "chrome"
+  : args.includes("--playwright-browser")
+    ? "playwright"
+    : "auto";
 let foldersPageUrl = args.find((argument) => !argument.startsWith("-"))?.trim();
 
 console.log("Welcome to the Quizlet Flashcard Scraper!");
@@ -33,7 +44,7 @@ if (!foldersPageUrl) {
 }
 
 try {
-  const result = await scrapeQuizletFolders(foldersPageUrl, { headless });
+  const result = await scrapeQuizletFolders(foldersPageUrl, { browserMode, headless });
   console.log(
     `\nDone. Wrote ${result.filesWritten.length} of ${result.setsFound} discovered sets from ${result.foldersFound} folders.`,
   );

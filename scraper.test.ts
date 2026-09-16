@@ -108,3 +108,34 @@ test("extracts and validates term-definition pairs from rendered UI", async (con
     { term: "DNA", definition: "Genetic material" },
   ]);
 });
+
+test("extracts cards from Quizlet's current terms-list markup", async (context) => {
+  const browser = await chromium.launch({ headless: true });
+  context.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.setContent(`
+    <h1>Momentum</h1>
+    <span>Terms in this set (2)</span>
+    <section data-testid="terms-list">
+      <div aria-label="Term" class="SetPageTermsList-term">
+        <div data-testid="set-page-term-card-side"><span class="TermText">momentum</span></div>
+        <div data-testid="set-page-term-card-side"><span class="TermText">mass × velocity</span></div>
+      </div>
+      <div aria-label="Term" class="SetPageTermsList-term">
+        <div data-testid="set-page-term-card-side"><span class="TermText">impulse</span></div>
+        <div data-testid="set-page-term-card-side"><span class="TermText">force × time</span></div>
+      </div>
+    </section>
+  `);
+
+  const result = await extractFlashcardSet(page, {
+    id: "67890",
+    name: "Momentum",
+    url: "https://quizlet.com/67890/momentum-flash-cards/",
+  });
+
+  assert.deepEqual(result.cards, [
+    { term: "momentum", definition: "mass × velocity" },
+    { term: "impulse", definition: "force × time" },
+  ]);
+});

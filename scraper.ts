@@ -1,6 +1,10 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
-import { chromium, type Page } from "playwright";
+import { setTimeout as delay } from "node:timers/promises";
+import { chromium, type BrowserContext, type Page } from "playwright";
 import {
   FlashcardSetSchema,
   FolderLinkSchema,
@@ -19,6 +23,7 @@ const INVALID_FILE_CHARACTERS = /[<>:"/\\|?*\u0000-\u001f]/g;
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
 export interface ScrapeOptions {
+  browserMode?: "auto" | "chrome" | "playwright";
   headless?: boolean;
   outputDirectory?: string;
   profileDirectory?: string;
@@ -86,6 +91,161 @@ export function formatFlashcards(cards: Flashcard[]): string {
         `${index + 1}. ${normalizeText(term)} : ${normalizeText(definition)}`,
     )
     .join("\n");
+}
+
+interface BrowserSession {
+  context: BrowserContext;
+  close: () => Promise<void>;
+}
+
+function findChromeExecutable(): string | undefined {
+  const candidates: string[] = [];
+
+  if (process.platform === "win32") {
+    for (const base of [
+      process.env.ProgramFiles,
+      process.env["ProgramFiles(x86)"],
+      process.env.LOCALAPPDATA,
+    ]) {
+      if (base) {
+        candidates.push(path.join(base, "Google", "Chrome", "Application", "chrome.exe"));
+      }
+    }
+  } else if (process.platform === "darwin") {
+    candidates.push("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+  } else {
+    candidates.push(
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/opt/google/chrome/chrome",
+    );
+  }
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+async function availableLoopbackPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Could not reserve a local Chrome debugging port."));
+        return;
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(address.port);
+        }
+      });
+    });
+  });
+}
+
+async function waitForChromeDebugger(
+  endpoint: string,
+  processHandle: ChildProcess,
+): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (processHandle.exitCode !== null) {
+      throw new Error(`Chrome exited before Playwright could attach (code ${processHandle.exitCode}).`);
+    }
+
+    try {
+      const response = await fetch(`${endpoint}/json/version`);
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Chrome has not opened its local debugging endpoint yet.
+    }
+
+    await delay(250);
+  }
+
+  throw new Error("Timed out waiting for the regular Chrome window to start.");
+}
+
+async function launchRegularChrome(profileDirectory: string): Promise<BrowserSession> {
+  const executablePath = findChromeExecutable();
+  if (!executablePath) {
+    throw new Error(
+      "Google Chrome was not found. Install Chrome or run with --playwright-browser.",
+    );
+  }
+
+  const port = await availableLoopbackPort();
+  const endpoint = `http://127.0.0.1:${port}`;
+  const processHandle = spawn(
+    executablePath,
+    [
+      `--remote-debugging-port=${port}`,
+      "--remote-debugging-address=127.0.0.1",
+      `--user-data-dir=${profileDirectory}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank",
+    ],
+    { stdio: "ignore", windowsHide: false },
+  );
+
+  try {
+    await waitForChromeDebugger(endpoint, processHandle);
+    const browser = await chromium.connectOverCDP(endpoint);
+    const context = browser.contexts()[0];
+    if (!context) {
+      throw new Error("Chrome started without an attachable browser context.");
+    }
+
+    return {
+      context,
+      close: async () => {
+        await browser.close().catch(() => undefined);
+        if (processHandle.exitCode === null) {
+          processHandle.kill();
+        }
+      },
+    };
+  } catch (error) {
+    if (processHandle.exitCode === null) {
+      processHandle.kill();
+    }
+    throw error;
+  }
+}
+
+async function launchBrowser(options: ScrapeOptions): Promise<BrowserSession> {
+  const headless = options.headless ?? false;
+  const requestedMode = options.browserMode ?? "auto";
+  const useRegularChrome =
+    requestedMode === "chrome" ||
+    (requestedMode === "auto" && !headless && findChromeExecutable() !== undefined);
+
+  if (useRegularChrome) {
+    if (headless) {
+      throw new Error("Regular Chrome verification mode cannot be used with --headless.");
+    }
+
+    const profileDirectory = path.resolve(options.profileDirectory ?? ".quizlet-chrome");
+    console.log("Opening regular Chrome with a dedicated reusable profile...");
+    return launchRegularChrome(profileDirectory);
+  }
+
+  const profileDirectory = path.resolve(options.profileDirectory ?? ".quizlet-browser");
+  const context = await chromium.launchPersistentContext(profileDirectory, {
+    headless,
+    viewport: { width: 1440, height: 1000 },
+  });
+  return {
+    context,
+    close: () => context.close(),
+  };
 }
 
 async function dismissCookieBanner(page: Page): Promise<void> {
@@ -485,6 +645,8 @@ export async function extractFlashcardSet(
   const expectedCount = await expectedCardCount(page);
 
   const selectors = [
+    '[data-testid="terms-list"] > [aria-label="Term"]',
+    '[data-testid="terms-list"] .SetPageTermsList-term',
     '[data-testid="set-page-terms-list"] [data-testid="set-page-term"]',
     '[class*="SetPageTerms-termsList"] [class*="SetPageTerm-content"]',
     '[data-testid="set-page-term"]',
@@ -536,11 +698,8 @@ export async function scrapeQuizletFolders(
 
   const headless = options.headless ?? false;
   const outputDirectory = path.resolve(options.outputDirectory ?? "data");
-  const profileDirectory = path.resolve(options.profileDirectory ?? ".quizlet-browser");
-  const context = await chromium.launchPersistentContext(profileDirectory, {
-    headless,
-    viewport: { width: 1440, height: 1000 },
-  });
+  const browserSession = await launchBrowser(options);
+  const { context } = browserSession;
   const page = context.pages()[0] ?? (await context.newPage());
 
   const result: ScrapeResult = {
@@ -616,6 +775,6 @@ export async function scrapeQuizletFolders(
 
     return result;
   } finally {
-    await context.close();
+    await browserSession.close();
   }
 }
