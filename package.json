@@ -4,8 +4,10 @@
   "description": "Scrape your quizlet flashcards (for backup purposes only).",
   "main": "index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx tsx .\\index.ts"
+    "dev": "tsx index.ts",
+    "start": "tsx index.ts",
+    "test": "tsx --test scraper.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "repository": {
     "type": "git",
@@ -25,6 +27,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "playwright": "^1.63.0",
     "zod": "^4.6.5"
   }
 }
