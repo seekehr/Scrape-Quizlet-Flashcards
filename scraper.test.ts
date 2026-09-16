@@ -7,6 +7,7 @@ import {
   formatFlashcards,
   safeFileName,
   setLinksFromAnchors,
+  waitForQuizletPage,
 } from "./scraper.js";
 
 test("discovers and deduplicates Quizlet folder links", () => {
@@ -53,6 +54,29 @@ test("formats cards and produces Windows-safe names", () => {
     ]),
     "1. cell membrane : controls entry\n2. Nucleus : Contains DNA",
   );
+});
+
+test("waits through a delayed security-page redirect", async (context) => {
+  const browser = await chromium.launch({ headless: true });
+  context.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.setContent("<body>Initial response is still loading</body>");
+
+  const transitions = (async () => {
+    await page.waitForTimeout(100);
+    await page.setContent(`
+      <title>Just a moment...</title>
+      <body><h2>One more step...</h2><p>Verifying you are human</p></body>
+    `);
+    await page.waitForTimeout(300);
+    await page.setContent(`
+      <title>Folders | Quizlet</title>
+      <body><main><h1>Folders</h1><p>The real Quizlet content is now loaded.</p></main></body>
+    `);
+  })();
+
+  await Promise.all([waitForQuizletPage(page, false, 5_000), transitions]);
+  assert.equal(await page.title(), "Folders | Quizlet");
 });
 
 test("extracts and validates term-definition pairs from rendered UI", async (context) => {

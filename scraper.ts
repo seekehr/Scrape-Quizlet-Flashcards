@@ -105,44 +105,116 @@ async function dismissCookieBanner(page: Page): Promise<void> {
   }
 }
 
-async function isSecurityChallenge(page: Page): Promise<boolean> {
-  const title = await page.title().catch(() => "");
-  const body = await page.locator("body").innerText().catch(() => "");
+interface PageSnapshot {
+  title: string;
+  bodyText: string;
+  documentReady: boolean;
+  hasChallengeElement: boolean;
+  hasContentElement: boolean;
+}
+
+async function pageSnapshot(page: Page): Promise<PageSnapshot> {
+  return page
+    .evaluate(() => ({
+      title: document.title,
+      bodyText: document.body?.innerText.slice(0, 5_000) ?? "",
+      documentReady: document.readyState !== "loading",
+      hasChallengeElement: Boolean(
+        document.querySelector(
+          'iframe[src*="challenges.cloudflare.com"], .cf-turnstile, [name="cf-turnstile-response"], #challenge-stage',
+        ),
+      ),
+      hasContentElement: Boolean(
+        document.querySelector("main, h1, [role=main]") ||
+          document.querySelectorAll("a[href]").length >= 3,
+      ),
+    }))
+    .catch(() => ({
+      title: "",
+      bodyText: "",
+      documentReady: false,
+      hasChallengeElement: false,
+      hasContentElement: false,
+    }));
+}
+
+function snapshotIsSecurityChallenge(snapshot: PageSnapshot): boolean {
+  const challengeText = `${snapshot.title}\n${snapshot.bodyText}`;
   return (
-    /just a moment/i.test(title) ||
-    /security system.*triggered|verify you are human|one more step/i.test(body)
+    snapshot.hasChallengeElement ||
+    /just a moment|one more step|checking your browser|security verification|verif(?:y|ying)(?: you are)? human|security system.*triggered|cloudflare.*ray id|ray id:/i.test(
+      challengeText,
+    )
   );
 }
 
-async function waitForSecurityChallenge(page: Page, headless: boolean): Promise<void> {
-  if (!(await isSecurityChallenge(page))) {
-    return;
+export async function waitForQuizletPage(
+  page: Page,
+  headless: boolean,
+  maximumWaitMs = 5 * 60_000,
+): Promise<void> {
+  const startedAt = Date.now();
+  let deadline = startedAt + Math.min(maximumWaitMs, 30_000);
+  let challengeSeen = false;
+  let challengeMessagePrinted = false;
+  let readySince: number | undefined;
+  let lastSnapshot = await pageSnapshot(page);
+
+  while (Date.now() < deadline) {
+    lastSnapshot = await pageSnapshot(page);
+    const isChallenge = snapshotIsSecurityChallenge(lastSnapshot);
+
+    if (isChallenge) {
+      challengeSeen = true;
+      readySince = undefined;
+
+      if (!challengeMessagePrinted) {
+        console.log(
+          headless
+            ? "Quizlet requested human verification; waiting briefly for automatic verification..."
+            : "Quizlet requested human verification. Complete it in the browser window...",
+        );
+        challengeMessagePrinted = true;
+      }
+
+      deadline = headless
+        ? Math.min(deadline, Date.now() + 15_000)
+        : startedAt + maximumWaitMs;
+    } else if (
+      lastSnapshot.documentReady &&
+      lastSnapshot.hasContentElement &&
+      normalizeText(lastSnapshot.bodyText).length > 20
+    ) {
+      readySince ??= Date.now();
+
+      // Requiring a short stable period catches Cloudflare redirects that occur
+      // just after the first document's DOMContentLoaded event.
+      if (Date.now() - readySince >= 2_000) {
+        return;
+      }
+    } else {
+      readySince = undefined;
+    }
+
+    await page.waitForTimeout(250);
   }
 
-  if (headless) {
+  if (challengeSeen) {
     throw new Error(
-      "Quizlet requested human verification. Run without --headless and complete the challenge in the opened browser.",
+      headless
+        ? "Quizlet requested human verification. Run without --headless and complete the challenge in the opened browser."
+        : "Timed out waiting for Quizlet human verification.",
     );
   }
 
-  console.log("Quizlet requested human verification. Complete it in the browser window...");
-  const deadline = Date.now() + 5 * 60_000;
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(1_000);
-    if (!(await isSecurityChallenge(page))) {
-      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-      return;
-    }
-  }
-
-  throw new Error("Timed out waiting for Quizlet human verification.");
+  const title = normalizeText(lastSnapshot.title) || "untitled page";
+  throw new Error(`Quizlet did not finish loading (page title: ${title}).`);
 }
 
 async function openPage(page: Page, url: string, headless: boolean): Promise<void> {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await waitForSecurityChallenge(page, headless);
+  await waitForQuizletPage(page, headless);
   await dismissCookieBanner(page);
-  await page.waitForTimeout(750);
 }
 
 async function revealAllItems(page: Page): Promise<void> {
