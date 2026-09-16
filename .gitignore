@@ -6,8 +6,6 @@ dist/
 coverage/
 
 # Environment and local configuration
-.env
-.env.*
 !.env.example
 
 # Logs and runtime output
@@ -19,7 +17,6 @@ logs/
 
 # IDE settings
 .idea/
-.vscode/
 
 # Operating-system files
 .DS_Store
@@ -32,3 +29,4 @@ data/
 # Reusable Playwright profile (cookies and Quizlet verification state)
 .quizlet-browser/
 .quizlet-chrome/
+config.bat

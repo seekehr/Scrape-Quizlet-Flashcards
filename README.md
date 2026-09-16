@@ -4,6 +4,11 @@ Back up every public flashcard set in every public folder on a Quizlet user's
 folders page. The scraper uses the rendered Quizlet UI with Playwright, validates
 the extracted data with Zod, and writes one text file per set.
 
+## Preview
+
+<img src="previewimgs/cli_preview.png" alt="Preview" width="700">
+<img src="previewimgs/preview_output.png" alt="Preview" width="700">
+
 ## Install
 
 ```powershell
@@ -13,7 +18,7 @@ npx playwright install chromium
 
 ## Run
 
-Pass the folders-page URL directly:
+Pass the folders-page URL directly, eg:
 
 ```powershell
 npm run dev -- https://quizlet.com/user/grouchyseeker/folders
