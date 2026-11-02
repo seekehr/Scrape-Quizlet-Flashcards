@@ -4,8 +4,8 @@
   "description": "Scrape your quizlet flashcards (for backup purposes only).",
   "main": "index.ts",
   "scripts": {
-    "dev": "tsx index.ts",
-    "start": "tsx index.ts",
+    "dev": "node init && tsx index.ts",
+    "start": "node init && tsx index.ts",
     "test": "tsx --test scraper.test.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -27,6 +27,8 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2",
     "playwright": "^1.63.0",
     "zod": "^4.6.5"
   }

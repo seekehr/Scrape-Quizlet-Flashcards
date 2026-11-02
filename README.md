@@ -4,6 +4,10 @@ Back up every public flashcard set in every public folder on a Quizlet user's
 folders page. The scraper uses the rendered Quizlet UI with Playwright, validates
 the extracted data with Zod, and writes one text file per set.
 
+## Preview
+
+<img src="cli_preview.png" width="700">
+
 ## Install
 
 ```powershell
