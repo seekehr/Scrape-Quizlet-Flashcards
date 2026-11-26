@@ -29,6 +29,6 @@
   "dependencies": {
     "node-fetch": "^3.3.2",
     "playwright": "^1.63.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   }
 }
